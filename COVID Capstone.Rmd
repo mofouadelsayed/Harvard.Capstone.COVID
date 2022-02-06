@@ -1,0 +1,306 @@
+---
+title: "COVID-19 Capstone Project"
+author: "Mohamed Elsayed"
+date: "November 2^nd^, 2021"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+   - \usepackage[T1]{fontenc}
+mainfont: SourceSansPro
+output: pdf_document
+---
+```{r Warning, message=FALSE, warning=FALSE}
+###################################################################
+# WARNING: Due to the size of this Dataset & the use of randomForest 
+# model, running this code might take some time to finish processing
+###################################################################
+```
+
+
+```{r Install Packages, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(scales)) install.packages("scales", repos = "http://cran.us.r-project.org")
+if(!require(ggpubr)) install.packages("ggpubr", repos = "http://cran.us.r-project.org")
+if(!require(ggrepel)) install.packages("ggrepel", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(Amelia)) install.packages("Amelia", repos = "http://cran.us.r-project.org")
+if(!require(gcookbook)) install.packages("gcookbook", repos = "http://cran.us.r-project.org")
+if(!require(CatEncoders)) install.packages("CatEncoders", repos = "http://cran.us.r-project.org")
+if(!require(cleandata)) install.packages("cleandata", repos = "http://cran.us.r-project.org")
+if(!require(caTools)) install.packages("caTools", repos = "http://cran.us.r-project.org")
+if(!require(ROSE)) install.packages("ROSE", repos = "http://cran.us.r-project.org")
+if(!require(party)) install.packages("party", repos = "http://cran.us.r-project.org")
+if(!require(ranger)) install.packages("ranger", repos = "http://cran.us.r-project.org")
+```
+
+
+```{r Load Libraries, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(scales)
+library(ggpubr)
+library(ggrepel)
+library(caret)
+library(Amelia)
+library(gcookbook)
+library(CatEncoders)
+library(cleandata)
+library(caTools)
+library(ROSE)
+library(party)
+library(ranger)
+```
+
+## I. Introduction
+Alberta has been one of the hardest hit places around the world with the fourth wave of the pandemic. Lack of restrictions on social events, relatively low vaccination rates & the Delta variant being highly infectious drove the daily case numbers to unprecedented levels. Having higher daily case counts than Ontario which has three times the population of Alberta prompted national news headlines like "Western provinces driving Canada's fourth wave" & led to the government of Alberta declaring a state of public health emergency. Armed forces were sent to help the health sector & patients were being flown out of province for treatment as ICU capacity was reaching critical levels. 
+
+As a resident of Alberta & being affected by this situation, I wanted to create an algorithm that could predict deaths due to COVID-19 with  **\textcolor{rgb:red, 43;green,148;blue,71}{Accuracy exceeding 90\%}**. I have downloaded the case data between March 6, 2020 and October 12, 2021 in csv format from the Alberta government website to my GitHub repository & will be automatically downloaded to R when the code runs.
+
+The data includes more than 297,000 entries & 7 variables like Gender, Age group, Zone, Status & Date. In this project I will focus on predicting the status (Died) based on the Age group, Gender, Health Zone & Case Type data available. I will be using **\textcolor{orange}{logistic regression, decision tree and random forest}**  models to try to reach my goal in model Accuracy. My main focus will be on the **\textcolor{rgb:red, 43;green,74;blue,148}{"Sensitivity" and "Balanced Accuracy"}** outputs of each model as I aim to correctly predict deaths. Since this will be a classification machine learning algorithm, there will be some data preparation done before fitting my models which will be explained in the sections below.
+
+## II. Methods
+
+This is the longest section in this report in which I will outline the general methodology I used in this project. This section will be divided into two main parts:  
+
+  1. Data Exploration through Visualization & the insights gained from it.
+  2. Data preparation & Building the prediction models  
+
+The methods used in this project aim at developing a classification machine learning algorithm that predicts deaths due to COVID-19 based on various parameters. As mentioned above, Balanced Accuracy will be the main metric I will use to evaluate model performance although an equally important metric in the model evaluation process will be **\textcolor{rgb:red, 43;green,74;blue,148}{Sensitivity}**. 
+\newpage 
+The dataset will be split in 70-30 ratio as follows:  
+
+  1. **`train`** set will hold 70% of the data for model development.
+  2. **`test`** set will hold 30% of the data for model evaluation.  
+
+  
+### 1. Data Exploration & Visualization
+Below I will import the data into Rstudio then rename the columns to remove spaces & simplify names then remove unknown values. Also I've chosen to eliminate the case status "Active" from the dataset as this is naturally updated to either "Recovered" or "Died". Then will get a glimpse of the dataset.
+```{r Download, message=FALSE, warning=FALSE}
+# Download from GitHub
+covid_alberta <- read_csv("https://raw.githubusercontent.com/mofouadelsayed/Harvard.Capstone/main/covid-19-alberta-statistics-data.csv")
+
+# Rename Columns
+colnames(covid_alberta)<- c("Number", "Date", "Zone", "Gender", "Age_group", "Status",
+                            "Type")
+
+# Exclude Unknown entries
+covid_alberta<- covid_alberta %>% filter(!Age_group== "Unknown") %>% 
+  filter(!Gender== "Unknown") %>% filter(!Status== "Active")
+
+as_tibble(head(covid_alberta))
+```
+
+
+Now that the data is imported I will start exploring the dataset to start building the approach with which I will develop the prediction models. I will start by checking the dimensions of the data & what's the type of each variable then will try to gather meaningful information for various visualizations as pointed below.
+```{r Exploration & Visualization, message=FALSE, warning=FALSE}
+# Dimensions & variable classes of the dataset
+glimpse(covid_alberta)
+
+```
+
+
+```{r echo=FALSE}
+# Daily cases clearly showing the pandemic waves
+daily_cases<-covid_alberta %>% filter(Date< "2021-09-30")  %>% group_by(Date) %>% summarize(Cases= n())
+daily_cases %>% ggplot(aes(Date, Cases)) + geom_line(color= "#264653", size= 0.75) + theme_bw() +  ggtitle("Daily COVID Cases in Alberta") + theme(plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#f4a261"), panel.border = element_blank(), panel.background = element_blank()) + scale_y_continuous(labels = comma)
+```
+
+\vspace{1.5em}
+```{r echo=FALSE}
+# Cases by Age group & Gender
+within(covid_alberta, Age_group <- factor(Age_group, levels=names(sort(table(Age_group), decreasing=TRUE)))) %>% ggplot(aes(Age_group,fill=Gender)) + geom_bar(position = position_dodge()) + theme(axis.text.x = element_text(angle=90, hjust=1), plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#264653"), panel.border = element_blank(), panel.background = element_blank()) + geom_text(stat = 'count' , aes(label= ..count..), position = position_dodge(0.95), color= "white", vjust= 1.2, size=1.5, fontface= "bold") + scale_fill_manual(values = c("#264653", "#f4a261")) + ggtitle("Case Counts by Age Group & Gender") + scale_y_continuous(labels = comma) + ylab("Case Count") + xlab("Age Group")
+```
+
+\vspace{1.5em}
+```{r echo=FALSE}
+# Case status by Age Group
+within(covid_alberta, Age_group <- factor(Age_group, levels=names(sort(table(Age_group), decreasing=TRUE)))) %>% ggplot(aes(Age_group,fill=Status)) + geom_bar(position = position_dodge()) + theme(axis.text.x = element_text(angle=90, hjust=1), plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#264653"), panel.border = element_blank(), panel.background = element_blank()) + geom_text(stat = 'count' , aes(label= ..count..), position = position_dodge(0.95), color= "#264653", vjust= -1, size=2, fontface= "bold") + scale_fill_manual(values = c("#264653", "#f4a261")) + ggtitle("Recovery Status by Age Group") + scale_y_continuous(labels = comma) + ylab("Count") + xlab("Age Group")
+```
+
+\vspace{1.5em}
+```{r echo=FALSE}
+# Status by Gender
+covid_alberta %>% ggplot(aes(Gender,fill=Status)) + geom_bar(position = position_dodge()) +  scale_y_continuous(labels = comma) + theme(plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#264653"), panel.border = element_blank(), panel.background = element_blank()) + geom_text(stat = 'count' , aes(label= ..count..), position = position_dodge(0.95), color= "#264653", vjust= -0.5, size=3.5, fontface= "bold") + scale_fill_manual(values = c("#264653", "#f4a261")) + ggtitle("Recovery Status by Gender") + ylab("Count")
+```
+
+\vspace{1.5em}
+```{r echo=FALSE}
+# Death by Gender & Age group
+covid_alberta %>% filter(Status== "Died") %>% ggplot(aes(Age_group,fill=Gender)) + geom_bar(position = position_dodge()) + theme(axis.text.x = element_text(angle=90, hjust=1), plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#264653"), panel.border = element_blank(), panel.background = element_blank()) + geom_text(stat = 'count' , aes(label= ..count..), position = position_dodge(0.95), color= "#264653", vjust= -0.5, size=2.5, fontface= "bold") + scale_fill_manual(values = c("#264653", "#f4a261")) + ggtitle("COVID Deaths by Age Group & Gender") + scale_y_continuous(labels = comma) + ylab("Deaths") + xlab("Age Group")
+```
+
+\vspace{1.5em}
+```{r echo=FALSE}
+# Cases & Deaths by Zones
+covid_alberta %>% ggplot(aes(Zone,fill=Status)) + geom_bar(position = position_dodge()) + theme(axis.text.x = element_text(angle=90, hjust=1), plot.title = element_text(size = 14, face = "bold", colour = "#264653", margin = margin(0,0,15,0)), axis.title = element_text(size = 12, face = "bold", colour = "#264653"), axis.text = element_text(face= "bold", color= "#264653"), panel.border = element_blank(), panel.background = element_blank()) + geom_text(stat = 'count' , aes(label= ..count..), position = position_dodge(0.95), color= "#264653", vjust= -0.5, size=2.5, fontface= "bold") + scale_fill_manual(values = c("#264653", "#f4a261")) + ggtitle("Zone Cases Vs. Deaths") + scale_y_continuous(labels = comma) + ylab("Count") + xlab("Zone")
+```
+
+```{r Percent, message=FALSE, warning=FALSE}
+# Percentage of total deaths from COVID
+mean(covid_alberta$Status== "Died")*100
+```
+
+After exploring the structure of the dataset & the plots above, there are a few insights observed that are going to be useful in preparing the data for modeling and in knowing what are the expectations from the variables.   
+
+  1. All variables are in "character" format which will need to be converted into "factors" to fit into the classification models. Also the number & date variables need to be removed.  
+  
+  2. Death rate is significantly small **(<0.1% of the data)** which implies that the dataset is highly imbalanced. This will constitute a challenge for machine learning algorithms.  
+  
+  3. The first four plots show no significance of any variable affecting death rates but It's very visible on the fifth plot that the majority of deaths happened in age groups above 60 years old.  
+  
+  4. The last plot reveals that although Calgary has the highest recorded number of cases, it's actually Edmonton that recorded the highest number of deaths.
+
+### 2. Preparing the data & Builing the prediction models
+
+Since the majority of data variables are in character format, everything will need to be converted into factors. But when it comes to the health zones, that needed to be converted in a different way because zones are not related to each other, not like age for example. So I have used **`dummyVars`** function in the "caret" package to expand the health zones into  separate columns. If a COVID case is recorded in a particular zone, that zone will have a value of "1" with all other zones on the same row will show "0". So in summary, it's changing the health zone into a binary variable.  
+
+Then the **`train`** & **`test`** sets of the data will be created to start building the models
+```{r Convert, message=FALSE, warning=FALSE}
+# Converting the Type, Status & Gender variables to factors to be able to 
+# feed them into the models.
+covid_alberta$Type<-  factor(covid_alberta$Type,
+                 levels = c('Confirmed', 'Probable'),
+                 labels = c(1, 0))
+
+covid_alberta$Status<-  factor(covid_alberta$Status,
+                   levels = c('Recovered','Died'),
+                   labels = c(0, 1))
+
+covid_alberta$Gender<- factor(covid_alberta$Gender,
+                   levels = c('Male', 'Female'),
+                   labels = c(1, 0))
+
+covid_alberta$Age_group<- factor(covid_alberta$Age_group, 
+                      levels = c('Under 1 year','1-4 years','5-9 years',
+                                '10-19 years','20-29 years',
+                                '30-39 years','40-49 years','50-59 years','60-69 years',
+                                '70-79 years','80+ years'),
+                      labels = c(0,1,2,3,4,5,6,7,8,9,10))
+```
+```{r dummyVars, message=FALSE, warning=FALSE}
+# Converting Zones by dummyVars
+covid_alberta$Zone<- factor(covid_alberta$Zone, exclude = NULL)
+covid_alberta$Zone<- addNA(covid_alberta$Zone)
+dummy<- caret::dummyVars("~Zone", data= covid_alberta)
+df<- data.frame(predict(dummy, newdata = covid_alberta))
+covid_alberta<- cbind(covid_alberta, df)
+
+# Removing the Zone Column as replaced by the dummyVars outpput & Remove Date & Number
+covid_alberta<- covid_alberta %>% select(c(-Zone, -Date, -Number))
+as_tibble(head(covid_alberta))
+
+# Creating the train & test sets
+set.seed(123, sample.kind = "Rounding")
+ind<- createDataPartition(covid_alberta$Status, times= 1, p=0.7, list= FALSE)
+train<- covid_alberta[ind,]
+test<- covid_alberta[-ind,]
+```
+
+Below I will start building the prediction models, the logistic regression model with the data as it is will be my baseline model for predicting deaths.
+
+- **1: Unbalanced data glm model (Baseline model)**
+```{r message=FALSE, warning=FALSE}
+unbal_glm_fit<- train %>% glm(Status ~ ., data=., family = "binomial")
+unbal_glm_pred<- ifelse(predict(unbal_glm_fit, newdata = test, type = "response")
+                        >0.5, 1, 0)
+
+Accuracy_results <- tibble(Method = "Unbalanced glm", 
+                          Balanced_Accuracy = confusionMatrix(as.factor(unbal_glm_pred), 
+                          test$Status, positive = "1")$byClass["Balanced Accuracy"]) 
+```
+\newpage 
+```{r message=FALSE, warning=FALSE}
+confusionMatrix(as.factor(unbal_glm_pred), test$Status, positive = "1")
+```
+
+As Seen above, the Confusion matrix resulted in a misleading high Accuracy because more than 99% of the case status is recovered "0". It's very visible as Sensitivity is 0% & Balanced Accuracy is 50%. This will remain my Baseline model & I will try to fix the data imbalance in the dataset by "Over-Sampling" the "Died" entries & "Under-Sampling" the "Recovered" so that the algorithm is trained on data that is not biased. Then I will apply the best performing method to the "Decision Tree" & "Random Forest" models.
+```{r}
+# Unbalanced data showing status "1" (Died) is Less than 1% of the total data
+table(train$Status)
+```
+
+\newpage 
+I will Balance the Data using over & under sampling then will apply both methods to the logistic regression model to see which performs better.
+```{r message=FALSE, warning=FALSE}
+# Over-Sampling
+set.seed(123, sample.kind = "Rounding")
+over<- ovun.sample(Status ~ ., data=train, method = "over", N= 412762)$data
+table(over$Status)
+
+# Under-Sampling
+set.seed(123, sample.kind = "Rounding")
+under<- ovun.sample(Status~ ., data= train, method = "under", N= 4060)$data
+table(under$Status)
+```
+
+- **2: Balanced glm model using Over-Sampling**
+```{r message=FALSE, warning=FALSE}
+bal_glm_fit_over<- over %>% glm(Status ~ ., data=., family = "binomial")
+bal_glm_pred_over<- ifelse(predict(bal_glm_fit_over, newdata = test, type = "response") 
+                           >0.5, 1, 0)
+
+Accuracy_results <- bind_rows(Accuracy_results, 
+                              tibble(Method = "Balanced Over-sampling glm", 
+                       Balanced_Accuracy = confusionMatrix(as.factor(bal_glm_pred_over),
+                       test$Status, positive = "1")$byClass["Balanced Accuracy"])) 
+
+confusionMatrix(as.factor(bal_glm_pred_over), test$Status, positive = "1")
+```
+
+- **3: Balanced glm model using Under-Sampling**
+```{r message=FALSE, warning=FALSE}
+bal_glm_fit_under<- under %>% glm(Status ~ ., data=., family = "binomial")
+bal_glm_pred_under<- ifelse(predict(bal_glm_fit_under, newdata = test, type = "response")
+                            >0.5, 1, 0)
+
+Accuracy_results <- bind_rows(Accuracy_results, 
+                              tibble(Method = "Balanced Under-Sampling glm",
+                      Balanced_Accuracy = confusionMatrix(as.factor(bal_glm_pred_under), 
+                      test$Status, positive = "1")$byClass["Balanced Accuracy"])) 
+
+confusionMatrix(as.factor(bal_glm_pred_under), test$Status, positive = "1")
+```
+\newpage 
+Judging by the results below & the Sensitivity in the confusion matrix for both models, it appears that the results from the "Over-Sampling" method performs slightly better so it will be the method which I will apply to the two remaining models.
+```{r}
+Accuracy_results %>% knitr::kable()
+```
+
+
+- **4: Decision Tree Balanced using Over-Sampling**
+```{r message=FALSE, warning=FALSE}
+bal_ctree_over<- over %>% ctree(Status ~ ., data=.)
+bal_ctree_over_pred<- predict(bal_ctree_over, test)
+
+Accuracy_results <- bind_rows(Accuracy_results, 
+                            tibble(Method = "Balanced Over-Sampling Ctree", 
+                            Balanced_Accuracy = confusionMatrix(bal_ctree_over_pred, 
+                            test$Status, positive = "1")$byClass["Balanced Accuracy"])) 
+
+confusionMatrix(bal_ctree_over_pred, test$Status, positive = "1")
+```
+
+\newpage 
+- **5: Random Forest using Over-Sampling**
+```{r message=FALSE, warning=FALSE}
+rf<- over %>% ranger(Status ~ ., data=., mtry = 8, num.trees = 200)
+rf_pred<- predict(rf, test)
+
+Accuracy_results <- bind_rows(Accuracy_results, 
+                            tibble(Method = "Balanced Over-Sampling Random Forest",
+                            Balanced_Accuracy = confusionMatrix(rf_pred$predictions, 
+                            test$Status, positive = "1")$byClass["Balanced Accuracy"]))
+
+confusionMatrix(rf_pred$predictions, test$Status, positive = "1")
+```
+\newpage 
+## III. Results
+All three models applied to the "Over-Sampling" data showed significant improvement over the baseline model as seen in the summary table below. Although the high imbalance in the data & the absence of numerical values in the dataset impacted model performance, all three model results were close to each other with the "Decision Tree" model slightly out-performing the linear regression & the random forest algorithms when it comes to Sensitivity. **Please Note:** I have used the **`ranger`** function to run the random forest algorithm as it's designed to work much faster on larger datasets, I have also limited the tuning parameters of that model so that running the code doesn't crash the Rstudio session.
+```{r}
+Accuracy_results %>% arrange(desc(Balanced_Accuracy)) %>% knitr::kable()
+```
+
+## IV. Conclusion
+Exploring the data up to the date of download reveals that death from COVID-19 is around the same figures reported by media & health organizations. It also reveals that up to that date, the majority of deaths from COVID-19 happen in ages 60 Years & above. The unavailability of the vaccination status & the strength of the social restrictions applied at the time when each case was recorded affected the accuracy of all models. The size of the data also impacted the final results of this project which could have been improved with applying techniques like "Cross-Validation" & "Random-Searching" for the random forest model parameter tuning.  
+\newline
+Future work & further development would include adding vaccination status, the strength of social restrictions at the time of recording each case & tuning the random forest parameters would be very helpful in achieving higher prediction accuracy.
